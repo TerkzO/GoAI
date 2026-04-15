@@ -1,6 +1,7 @@
 package myjwt
 
 import (
+	"GoAI/config"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -13,6 +14,7 @@ type Claims struct {
 	jwt.RegisteredClaims        // 包括过期时间 (exp)、发行者 (iss)、主题 (sub)、发行时间 (iat)。
 }
 
+// GenerateToken 生成Token
 func GenerateToken(id int64, username string) (string, error) {
 	claims := Claims{
 		ID:       id,
@@ -30,7 +32,7 @@ func GenerateToken(id int64, username string) (string, error) {
 	return token.SignedString([]byte(config.GetConfig().Key))
 }
 
-// 解析Token
+// ParseToken 解析Token
 func ParseToken(token string) (string, bool) {
 	claims := new(Claims)
 	t, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (interface{}, error) {
