@@ -41,7 +41,7 @@ func NewOpenAIModel(ctx context.Context) (*OpenAIModel, error) {
 	// modelName := os.Getenv("OPENAI_MODEL_NAME")
 	// baseURL := os.Getenv("OPENAI_BASE_URL")
 
-	key := "sk-272c1775f5b84bfe9155f9798b69e2d2"
+	key := config.GetConfig().ApiKey
 	baseURL := "https://api.deepseek.com"
 	modelName := "deepseek-chat"
 
