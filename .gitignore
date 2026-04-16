@@ -1,3 +1,4 @@
 vue-frontend/node_modules
 
 ./go.sum
+config/config_temp.toml

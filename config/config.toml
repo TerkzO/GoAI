@@ -4,8 +4,8 @@ host = "0.0.0.0"
 port = 9090
 
 [emailConfig]
-authcode = "xbujzpsuvklzdhac"
-email = "3118029164@qq.com"
+authcode = "your email code"
+email = "email"
 
 [redisConfig]
 host = "127.0.0.1"
@@ -16,9 +16,9 @@ db = 0
 [mysqlConfig]
 host = "127.0.0.1"
 port = 3306
-user = "L1nx32b"
-password = "1234"
-databaseName = "GopherAI"
+user = "username"
+password = "password"
+databaseName = "dataname"
 charset =  "utf8mb4"
 
 [jwtConfig]
@@ -30,8 +30,8 @@ key= "GOAI-V1"
 [rabbitmqConfig]
 host= "127.0.0.1"
 port= 5672
-username= "L1nx32b"
-password= "123456"
+username= "username"
+password= "password"
 vhost= "/"
 
 [ragModelConfig]
@@ -46,4 +46,4 @@ voiceServiceApiKey = "baiduApiKey"
 voiceServiceSecretKey ="baiduSecretKey"
 
 [modelKeyConfig]
-apikey = "sk-272c1775f5b84bfe9155f9798b69e2d2"
+apikey = "APIkey"
