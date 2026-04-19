@@ -84,16 +84,22 @@ func InitRedisIndex(ctx context.Context, filename string, dimension int) error {
 
 	// 创建索引
 	createArgs := []interface{}{
+		// 创建新索引, name; indexName
 		"FT.CREATE", indexName,
 		"ON", "HASH",
 		"PREFIX", "1", prefix,
 		"SCHEMA",
+		// 定义字段类型。content 和 metadata 都是文本字段
 		"content", "TEXT",
 		"metadata", "TEXT",
+		// 告诉 Redis 这是一个向量字段，存储向量数据。
 		"vector", "VECTOR", "FLAT",
 		"6",
+		// 向量里每个数字的类型
 		"TYPE", "FLOAT32",
+		// 向量维度
 		"DIM", dimension,
+		// 告诉 Redis，查相似向量的时候，用“余弦相似度”去比较两个向量是不是意思相近
 		"DISTANCE_METRIC", "COSINE",
 	}
 

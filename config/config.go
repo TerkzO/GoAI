@@ -54,6 +54,7 @@ type RagModelConfig struct {
 	RagDocDir         string `toml:"docDir"`
 	RagBaseUrl        string `toml:"baseUrl"`
 	RagDimension      int    `toml:"dimension"`
+	RagKey            string `toml:"ragkey"`
 }
 
 type VoiceServiceConfig struct {

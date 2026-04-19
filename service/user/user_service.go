@@ -14,7 +14,7 @@ func Login(username, password string) (string, code.Code) {
 	var userInformation *model.User
 	var ok bool
 	// 判断用户是否存在
-	if ok, userInformation = user.IsExistUser(username); !ok {
+	if ok, userInformation = user.IsExistUserByName(username); !ok {
 		return "", code.CodeUserNotExist
 	}
 	// 判断用户是否密码账号正确
@@ -36,7 +36,7 @@ func Register(email, password, captcha string) (string, code.Code) {
 	var userInformation *model.User
 
 	//1:先判断用户是否已经存在了
-	if ok, _ := user.IsExistUser(email); ok {
+	if ok, _ := user.IsExistUserByEmail(email); ok {
 		return "", code.CodeUserExist
 	}
 

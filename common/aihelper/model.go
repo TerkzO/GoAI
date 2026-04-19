@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/cloudwego/eino-ext/components/model/ollama"
@@ -151,7 +150,8 @@ type AliRAGModel struct {
 }
 
 func NewAliRAGModel(ctx context.Context, username string) (*AliRAGModel, error) {
-	key := os.Getenv("OPENAI_API_KEY")
+	// key := os.Getenv("OPENAI_API_KEY")
+	key := config.GetConfig().RagKey
 	conf := config.GetConfig()
 	modelName := conf.RagModelConfig.RagChatModelName
 	baseURL := conf.RagModelConfig.RagBaseUrl
@@ -323,7 +323,8 @@ type MCPModel struct {
 
 // NewMCPModel 创建MCP模型实例
 func NewMCPModel(ctx context.Context, username string) (*MCPModel, error) {
-	key := os.Getenv("OPENAI_API_KEY")
+	// key := os.Getenv("OPENAI_API_KEY")
+	key := config.GetConfig().RagKey
 	conf := config.GetConfig()
 	modelName := conf.RagModelConfig.RagChatModelName
 	baseURL := conf.RagModelConfig.RagBaseUrl
@@ -543,7 +544,7 @@ type AIToolCall struct {
 
 // buildFirstPrompt 构建第一次调用的提示词
 func (m *MCPModel) buildFirstPrompt(query string) string {
-	return fmt.Sprintf(`你是一个智能助手，可以调用MCP工具来获取信息。
+	var prompt string = fmt.Sprintf(`你是一个智能助手，可以调用MCP工具来获取信息。
 
 可用工具:
 - get_weather: 获取指定城市的天气信息，参数: city（城市名称，支持中文和英文，如北京、Shanghai等）
@@ -561,6 +562,8 @@ func (m *MCPModel) buildFirstPrompt(query string) string {
 用户问题: %s
 
 请根据需要调用适当的工具，然后给出综合的回答。`, query)
+	log.Println(prompt)
+	return prompt
 }
 
 // buildSecondPrompt 构建第二次调用的提示词

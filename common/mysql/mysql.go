@@ -73,8 +73,14 @@ func InsertUser(user *model.User) (*model.User, error) {
 	return user, err
 }
 
-func GetUserByUsername(username string) (*model.User, error) {
+func GetUserByUserEmail(email string) (*model.User, error) {
 	user := new(model.User)
-	err := DB.Where("username = ?", username).First(user).Error
+	err := DB.Where("email = ?", email).First(user).Error
+	return user, err
+}
+
+func GetUserByUserName(name string) (*model.User, error) {
+	user := new(model.User)
+	err := DB.Where("username = ?", name).First(user).Error
 	return user, err
 }

@@ -4,6 +4,7 @@ import (
 	"GoAI/dao/message"
 	"GoAI/model"
 	"encoding/json"
+	"log"
 
 	"github.com/streadway/amqp"
 )
@@ -39,6 +40,7 @@ func MQMessage(msg *amqp.Delivery) error {
 		IsUser:    param.IsUser,
 	}
 	// 消费者异步插入到数据库中
+	log.Println("将消息异步存入数据库中")
 	message.CreateMessage(newMsg)
 	return nil
 }
