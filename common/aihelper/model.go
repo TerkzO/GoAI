@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/cloudwego/eino-ext/components/model/ollama"
@@ -544,69 +546,153 @@ type AIToolCall struct {
 
 // buildFirstPrompt 构建第一次调用的提示词
 func (m *MCPModel) buildFirstPrompt(query string) string {
-	var prompt string = fmt.Sprintf(`你是一个智能助手，可以调用MCP工具来获取信息。
+	prompt := fmt.Sprintf(`你是一个智能助手，可以调用MCP工具来获取实时信息。
 
-可用工具:
-- get_weather: 获取指定城市的天气信息，参数: city（城市名称，支持中文和英文，如北京、Shanghai等）
+==== 可用工具清单 ====
 
-重要规则:
-1. 如果需要调用工具，必须严格返回以下JSON格式：
+1) get_weather —— 获取指定城市的天气信息
+   参数:
+     - city (string, 必填): 城市名称，支持中英文，如 "北京"、"Shanghai"
+
+2) query_ip —— 查询 IP 地址归属地信息
+   参数:
+     - ip (string, 必填): IP 地址，如 "8.8.8.8"，留空字符串则查询当前出口 IP
+
+3) exchange_rate —— 查询货币汇率并换算金额
+   参数:
+     - from (string, 必填): 源货币代码，如 "USD"、"CNY"、"JPY"
+     - to   (string, 必填): 目标货币代码，如 "CNY"、"EUR"
+     - amount (number, 可选): 换算金额，默认 1
+
+4) get_time —— 查询指定时区的当前时间
+   参数:
+     - timezone (string, 可选): IANA 时区名称，如 "Asia/Shanghai"、"America/New_York"；留空默认 "Asia/Shanghai"
+
+==== 严格的输出规则 ====
+
+1. 如果需要调用工具，必须只返回一个 JSON，不要包含任何其他文字、Markdown 标记或解释：
 {
   "isToolCall": true,
   "toolName": "工具名称",
-  "args": {"参数名": "参数值"}
+  "args": { "参数名": "参数值" }
 }
-2. 如果不需要调用工具，直接返回自然语言回答
-3. 请根据用户问题决定是否需要调用工具
 
-用户问题: %s
+2. 如果不需要调用工具，直接返回自然语言回答，不要包装成 JSON。
 
-请根据需要调用适当的工具，然后给出综合的回答。`, query)
+3. 只能选择上述工具之一，不得编造其他工具。
+
+4. 参数值必须符合对应工具的参数类型和含义。
+
+==== 示例 ====
+
+用户: 北京今天天气怎么样？
+输出: {"isToolCall": true, "toolName": "get_weather", "args": {"city": "北京"}}
+
+用户: 8.8.8.8 是哪里的？
+输出: {"isToolCall": true, "toolName": "query_ip", "args": {"ip": "8.8.8.8"}}
+
+用户: 100 美元等于多少人民币？
+输出: {"isToolCall": true, "toolName": "exchange_rate", "args": {"from": "USD", "to": "CNY", "amount": 100}}
+
+用户: 纽约现在几点？
+输出: {"isToolCall": true, "toolName": "get_time", "args": {"timezone": "America/New_York"}}
+
+用户: 你好
+输出: 你好！有什么可以帮您的吗？
+
+==== 用户问题 ====
+%s
+
+请严格按照上述规则输出。`, query)
+
 	log.Println(prompt)
 	return prompt
 }
 
 // buildSecondPrompt 构建第二次调用的提示词
 func (m *MCPModel) buildSecondPrompt(query, toolName string, args map[string]interface{}, toolResult string) string {
-	return fmt.Sprintf(`你是一个智能助手，可以调用MCP工具来获取信息。
+	return fmt.Sprintf(`你是一个智能助手，刚刚调用了MCP工具获取到真实数据，请基于工具返回结果组织自然、友好的最终回答。
 
-工具执行结果:
+==== 工具执行信息 ====
 工具名称: %s
 工具参数: %v
-工具结果: %s
+工具结果:
+%s
 
-用户问题: %s
+==== 用户原始问题 ====
+%s
 
-请根据工具结果和用户问题，给出最终的综合回答。`, toolName, args, toolResult, query)
+==== 回答要求 ====
+1. 用自然语言、简洁清晰地回答用户的问题。
+2. 结合工具返回的真实数据作答，不要编造未提供的信息。
+3. 如果工具结果包含数值（温度、汇率、时间等），请保留关键数字。
+4. 不要再输出 JSON，也不要提及"工具"、"MCP"等内部实现细节。
+5. 使用简体中文回答。`, toolName, args, toolResult, query)
 }
 
 // parseAIResponse 解析AI响应，检查是否包含工具调用
 func (m *MCPModel) parseAIResponse(response string) (*AIToolCall, error) {
-	// 尝试解析为JSON
+	// 支持 AI 输出带有 ```json 包裹的情况
+	cleaned := cleanJSONWrapper(response)
+
+	// 尝试直接解析为 JSON
 	var toolCall AIToolCall
-	if err := json.Unmarshal([]byte(response), &toolCall); err == nil {
-		return &toolCall, nil
+	if err := json.Unmarshal([]byte(cleaned), &toolCall); err == nil && toolCall.IsToolCall {
+		if m.isValidToolName(toolCall.ToolName) {
+			return &toolCall, nil
+		}
 	}
 
-	// 如果不是JSON，检查是否包含工具调用关键词
-	if strings.Contains(response, "get_weather") {
-		// 尝试提取城市名称
-		city := m.extractCityFromResponse(response)
-		if city != "" {
-			return &AIToolCall{
-				IsToolCall: true,
-				ToolName:   "get_weather",
-				Args:       map[string]interface{}{"city": city},
-			}, nil
+	// // 如果不是JSON，检查是否包含工具调用关键词
+	// if strings.Contains(response, "get_weather") {
+	// 	// 尝试提取城市名称
+	// 	city := m.extractCityFromResponse(response)
+	// 	if city != "" {
+	// 		return &AIToolCall{
+	// 			IsToolCall: true,
+	// 			ToolName:   "get_weather",
+	// 			Args:       map[string]interface{}{"city": city},
+	// 		}, nil
+	// 	}
+	// }
+
+	// 尝试从文本中抽取第一个 JSON 对象
+	if jsonStr := extractFirstJSONObject(cleaned); jsonStr != "" {
+		var tc AIToolCall
+		if err := json.Unmarshal([]byte(jsonStr), &tc); err == nil && tc.IsToolCall {
+			if m.isValidToolName(tc.ToolName) {
+				return &tc, nil
+			}
 		}
+	}
+
+	// 兜底：根据关键词推断工具（尽量少用）
+	if tc := m.fallbackGuessTool(response); tc != nil {
+		return tc, nil
 	}
 
 	// 不是工具调用
 	return &AIToolCall{IsToolCall: false}, nil
 }
 
+// isValidToolName 校验工具名是否在白名单内
+func (m *MCPModel) isValidToolName(name string) bool {
+	switch name {
+	case "get_weather", "query_ip", "exchange_rate", "get_time":
+		return true
+	}
+	return false
+}
+
 // callMCPTool 调用MCP工具
 func (m *MCPModel) callMCPTool(ctx context.Context, client *client.Client, toolName string, args map[string]interface{}) (string, error) {
+	if args == nil {
+		args = map[string]interface{}{}
+	}
+
+	// 针对各工具做一次参数规范化 / 类型纠正
+	args = m.normalizeToolArgs(toolName, args)
+
 	callToolRequest := mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      toolName,
@@ -627,6 +713,7 @@ func (m *MCPModel) callMCPTool(ctx context.Context, client *client.Client, toolN
 		}
 	}
 
+	log.Printf("MCP tool [%s] args=%v result=%s", toolName, args, text)
 	return text, nil
 }
 
@@ -643,6 +730,179 @@ func (m *MCPModel) extractCityFromResponse(response string) string {
 
 	// 如果JSON解析失败，尝试从文本中提取城市名称
 	// 这部分可以根据实际需要扩展，但不再预留固定城市列表
+	return ""
+}
+
+// fallbackGuessTool 根据文本关键词做兜底猜测
+func (m *MCPModel) fallbackGuessTool(response string) *AIToolCall {
+	low := strings.ToLower(response)
+
+	switch {
+	case strings.Contains(low, "get_weather"):
+		city := m.extractStringArg(response, "city")
+		if city != "" {
+			return &AIToolCall{
+				IsToolCall: true,
+				ToolName:   "get_weather",
+				Args:       map[string]interface{}{"city": city},
+			}
+		}
+	case strings.Contains(low, "query_ip"):
+		ip := m.extractStringArg(response, "ip")
+		return &AIToolCall{
+			IsToolCall: true,
+			ToolName:   "query_ip",
+			Args:       map[string]interface{}{"ip": ip},
+		}
+	case strings.Contains(low, "exchange_rate"):
+		from := m.extractStringArg(response, "from")
+		to := m.extractStringArg(response, "to")
+		if from != "" && to != "" {
+			args := map[string]interface{}{"from": from, "to": to}
+			if amt := m.extractNumberArg(response, "amount"); amt != 0 {
+				args["amount"] = amt
+			}
+			return &AIToolCall{
+				IsToolCall: true,
+				ToolName:   "exchange_rate",
+				Args:       args,
+			}
+		}
+	case strings.Contains(low, "get_time"):
+		tz := m.extractStringArg(response, "timezone")
+		return &AIToolCall{
+			IsToolCall: true,
+			ToolName:   "get_time",
+			Args:       map[string]interface{}{"timezone": tz},
+		}
+	}
+	return nil
+}
+
+// cleanJSONWrapper 去掉 Markdown ```json ... ``` 这类包裹
+func cleanJSONWrapper(s string) string {
+	s = strings.TrimSpace(s)
+	// 去除 ```json 或 ``` 前后缀
+	if strings.HasPrefix(s, "```") {
+		// 去掉第一行 ```xxx
+		if idx := strings.Index(s, "\n"); idx != -1 {
+			s = s[idx+1:]
+		}
+		// 去掉末尾的 ```
+		if idx := strings.LastIndex(s, "```"); idx != -1 {
+			s = s[:idx]
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+// normalizeToolArgs 将 AI 返回的参数规范化为 MCP 工具期望的类型
+func (m *MCPModel) normalizeToolArgs(toolName string, args map[string]interface{}) map[string]interface{} {
+	switch toolName {
+	case "exchange_rate":
+		// amount 可能是字符串，需要转成 float64
+		if v, ok := args["amount"]; ok {
+			switch x := v.(type) {
+			case string:
+				if f, err := strconv.ParseFloat(x, 64); err == nil {
+					args["amount"] = f
+				} else {
+					delete(args, "amount")
+				}
+			case int:
+				args["amount"] = float64(x)
+			case int64:
+				args["amount"] = float64(x)
+			}
+		}
+		// 货币代码统一大写
+		if f, ok := args["from"].(string); ok {
+			args["from"] = strings.ToUpper(strings.TrimSpace(f))
+		}
+		if t, ok := args["to"].(string); ok {
+			args["to"] = strings.ToUpper(strings.TrimSpace(t))
+		}
+
+	case "get_time":
+		if tz, ok := args["timezone"].(string); ok {
+			args["timezone"] = strings.TrimSpace(tz)
+		}
+
+	case "query_ip":
+		if ip, ok := args["ip"].(string); ok {
+			args["ip"] = strings.TrimSpace(ip)
+		}
+
+	case "get_weather":
+		if city, ok := args["city"].(string); ok {
+			args["city"] = strings.TrimSpace(city)
+		}
+	}
+	return args
+}
+
+// extractStringArg 从 JSON 风格文本里提取形如 "key": "value" 的字符串参数
+func (m *MCPModel) extractStringArg(text, key string) string {
+	// 简单的正则： "key"\s*:\s*"value"
+	pattern := fmt.Sprintf(`"%s"\s*:\s*"([^"]*)"`, regexp.QuoteMeta(key))
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(text)
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+// extractNumberArg 提取形如 "key": 123.45 的数字参数
+func (m *MCPModel) extractNumberArg(text, key string) float64 {
+	pattern := fmt.Sprintf(`"%s"\s*:\s*([0-9]+(?:\.[0-9]+)?)`, regexp.QuoteMeta(key))
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(text)
+	if len(matches) >= 2 {
+		if v, err := strconv.ParseFloat(matches[1], 64); err == nil {
+			return v
+		}
+	}
+	return 0
+}
+
+// extractFirstJSONObject 抽取字符串中第一个完整的 JSON 对象
+func extractFirstJSONObject(s string) string {
+	start := strings.Index(s, "{")
+	if start < 0 {
+		return ""
+	}
+	depth := 0
+	inStr := false
+	esc := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			if esc {
+				esc = false
+				continue
+			}
+			if c == '\\' {
+				esc = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
 	return ""
 }
 

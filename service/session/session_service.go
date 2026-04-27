@@ -49,7 +49,7 @@ func CreateSessionAndSendMessage(userName string, userQuestion string, modelType
 	manager := aihelper.GetGlobalManager()
 	config := map[string]interface{}{
 		// TODO: 从配置/环境中获取
-		"apiKey":   "",
+		"apiKey":   config.GetConfig().ApiKey,
 		"username": userName, // 用于 RAG 模型获取用户文档
 	}
 	helper, err := manager.GetOrCreateAIHelper(userName, createdSession.ID, modelType, config)
